@@ -1318,6 +1318,11 @@ cdef struct MPITreeHeader:
     SIZE_t node_count
     SIZE_t compressed_buf_size
 
+cdef object mpi_bcast_tree_header(object comm, MPITreeHeader h):
+    cdef np.npy_intp dim = sizeof(h)
+    cdef np.ndarray arr = np.PyArray_SimpleNewFromData(1, &dim, np.NPY_BYTE, &h)
+    return comm.Bcast(arr)
+
 cdef void mpi_send_tree_header(object comm, int dst, MPITreeHeader h):
     cdef np.npy_intp dim = sizeof(h)
     cdef np.ndarray arr = np.PyArray_SimpleNewFromData(1, &dim, np.NPY_BYTE, &h)
@@ -1330,12 +1335,15 @@ cdef MPITreeHeader mpi_recv_tree_header(object comm, int src):
     comm.Recv(arr, source=src)
     return h
 
-cpdef object mpi_send_tree(object comm, int dst, Tree tree, int compression, bint profile, bint send_to_all):
+cdef MPITreeHeader init_MPITreeHeader(Tree tree, int compressed_buf_size):
+    cdef MPITreeHeader h
+    h.node_count = tree.node_count
+    h.compressed_buf_size = compressed_buf_size
+    return h
+
+cpdef object compress_tree(Tree tree, int compression):
     if compression < 0 or compression > 9:
         raise ValueError('compression must be in [0, 9] (got {})'.format(int(compression)))
-
-    if profile:
-        t_start = time.time()
 
     cdef np.ndarray buf = np.empty(mpi_tree_buf_size(tree), dtype=np.dtype('b'))
 
@@ -1390,26 +1398,42 @@ cpdef object mpi_send_tree(object comm, int dst, Tree tree, int compression, bin
         raise RuntimeError('zlib error on compress2: {}'.format(int(err)))
     compressed_buf.resize(compressed_buf_size)
 
-    cdef MPITreeHeader h
-    h.node_count = tree.node_count
-    h.compressed_buf_size = compressed_buf_size
+    return compressed_buf, compressed_buf_size
+
+cpdef object get_tree_bufs(Tree tree, int compression, bint profile):
+    if profile:
+        t_start = time.time()
+
+    compressed_buf, compressed_buf_size = compress_tree(tree, compression)
+    h = init_MPITreeHeader(tree, compressed_buf_size)
 
     if profile:
         sent_bytes = sizeof(h) + compressed_buf_size
         t_sent = time.time()
-    if send_to_all:
-        for dst in range(comm.size):
-            if dst != comm.rank:
-                mpi_send_tree_header(comm, dst, h)
-                comm.Send(compressed_buf, dst)
-    else:
-        mpi_send_tree_header(comm, dst, h)
-        comm.Send(compressed_buf, dst)
-
+    
     if profile:
-        return (t_start, t_sent, sent_bytes)
+        return (t_start, t_sent, sent_bytes), compressed_buf, compressed_buf_size
     else:
-        return None
+        return None, compressed_buf, compressed_buf_size
+                        
+cpdef object mpi_send_tree(object comm, int dst, Tree tree, int compression, bint profile):
+    stats, tree_buf, h = get_tree_bufs(tree, compression, profile)
+
+    mpi_send_tree_header(comm, dst, h)
+    comm.Send(tree_buf, dst)
+    
+    if profile:
+        return stats
+    return None
+
+cpdef object mpi_bcast_tree(object comm, int src, Tree tree, int compression, bint profile):
+    stats, tree_buf, _ = get_tree_bufs(tree, compression, profile)
+
+    result = comm.Bcast(tree_buf, src)
+    
+    if profile:
+        return stats, result
+    return (stats, result)
 
 cpdef object mpi_recv_tree(object comm, int src,
                            int n_features, np.ndarray[SIZE_t, ndim=1] n_classes, int n_outputs,

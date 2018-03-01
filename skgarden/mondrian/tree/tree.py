@@ -514,8 +514,21 @@ class MondrianTreeRegressor(BaseMondrianTree, RegressorMixin):
 #   profile:     if True, the return value is a tuple
 #                (absolute start time, aboslute time sent, bytes sent). Else, the return value is
 #                None.
-def mpi_send(comm, dst, tree, compression=1, profile=False, send_to_all=False):
-    return _tree.mpi_send_tree(comm, dst, tree.tree_, compression, profile, send_to_all)
+def mpi_send(comm, dst, tree, compression=1, profile=False):
+    return _tree.mpi_send_tree(comm, dst, tree.tree_, compression, profile)
+
+# Serialize a tree and broadcast it to all tasks in the given MPI communicator.
+#   compression: an integer in [0, 9] indicating the level of compression to perform on the
+#                serialized data before sending. 0 indicates no compression, 9 indicates the highest
+#                level of compression. A higher compression level requires more computational
+#                overhead before sending, but results in less data being sent. Raises ValueError if
+#                compression is not in the range [0, 9].
+#   profile:     if True, the return value is a tuple of the format  
+#                ((absolute start time, aboslute time sent, bytes sent), result), where result is the
+#                broadcast tree for processes outside of the src.
+#                Else, the return value is of the format None, result
+def mpi_bcast(comm, src, tree, compression=1, profile=False):
+    return _tree.mpi_bcast_tree(comm, src, tree.tree_, compression, profile)
 
 # Receive, decompress, and deserialize a tree sent by the task with rank src in the given MPI
 # communictor. The tree must have been sent via mpi_send_tree(), or else the behavior is undefined.
