@@ -108,7 +108,7 @@ cdef class Tree:
 #   profile:     if True, the return value is a tuple
 #                (absolute start time, aboslute time sent, bytes sent). Else, the return value is
 #                None.
-cpdef object mpi_send_tree(object comm, int dst, Tree tree, int compression, bint profile, bint send_to_all)
+cpdef object mpi_send_tree(object comm, int dst, Tree tree, int compression, bint profile)
 
 # Receive, decompress, and deserialize a tree sent by the task with rank src in the given MPI
 # communictor. The tree must have been sent via mpi_send_tree(), or else the behavior is undefined.
@@ -124,6 +124,8 @@ cpdef object mpi_send_tree(object comm, int dst, Tree tree, int compression, bin
 cpdef object mpi_recv_tree(object comm, int src,
                            int n_features, np.ndarray[SIZE_t, ndim=1] n_classes, int n_outputs,
                            bint profile)
+
+cpdef object mpi_bcast_tree(object comm, int src, Tree tree, int compression, bint profile)
 
 # =============================================================================
 # Tree builder
